@@ -1,7 +1,7 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { PointerLockControls, useGLTF } from '@react-three/drei'
 import { Suspense, useRef, useEffect, useState, SetStateAction } from 'react'
-import { Vector2, Vector3, Raycaster, AudioListener, AudioLoader, Audio } from 'three'
+import { Vector2, Vector3, Raycaster, AudioListener, AudioLoader, Audio, PerspectiveCamera } from 'three'
 
 function Room() {
   const { scene } = useGLTF('/room.gltf')
@@ -133,7 +133,6 @@ function EnemyGroup({ enemySet, registerEnemies }: EnemyGroupProps) {
 }
 
 function generateEnemySet(): Enemy[] {
-  // Generate 3 enemies: 1 real, 2 fake
   const enemies: Enemy[] = [
     {
       isReal: true,
@@ -152,13 +151,43 @@ function generateEnemySet(): Enemy[] {
     }
   ]
 
-  // Shuffle the array to randomize positions of real and fake enemies
   for (let i = enemies.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[enemies[i], enemies[j]] = [enemies[j], enemies[i]]
   }
 
   return enemies
+}
+
+function DrunkFOVEffect({
+  time,
+  setTime
+}: {
+  time: number
+  setTime: React.Dispatch<React.SetStateAction<number>>
+}) {
+  const { camera } = useThree()
+
+  useFrame((_, delta) => {
+    // Only apply FOV effect if camera is a PerspectiveCamera
+    const perspectiveCamera = camera as PerspectiveCamera
+    if ('fov' in perspectiveCamera) {
+      if (time > 0) {
+        const progress = 1 - time / 3
+        const wobble = Math.sin(performance.now() * 0.005) * (1 - progress) * 2
+        perspectiveCamera.fov = 75 + wobble
+        perspectiveCamera.updateProjectionMatrix()
+        setTime(t => Math.max(0, t - delta))
+      } else {
+        if (perspectiveCamera.fov !== 75) {
+          perspectiveCamera.fov = 75
+          perspectiveCamera.updateProjectionMatrix()
+        }
+      }
+    }
+  })
+
+  return null
 }
 
 export default function App() {
@@ -168,11 +197,35 @@ export default function App() {
   const [currentSet, setCurrentSet] = useState<Enemy[]>([])
   const [cyclesCompleted, setCyclesCompleted] = useState(0)
   const [gameEnded, setGameEnded] = useState(false)
+  const [drunkEffectTime, setDrunkEffectTime] = useState(0)
+  const [blurOpacity, setBlurOpacity] = useState(0)
 
   useEffect(() => {
-    // Start with the first set
     setCurrentSet(generateEnemySet())
   }, [])
+
+  useEffect(() => {
+  let animationFrame: number
+
+  const animateBlur = () => {
+    setBlurOpacity(prev => {
+      if (drunkEffectTime > 0) return 1 // Hold at full blur while effect is active
+
+      const next = Math.max(0, prev - 0.02) // Smoothly fade out
+      if (next > 0) animationFrame = requestAnimationFrame(animateBlur)
+      return next
+    })
+  }
+
+  if (drunkEffectTime > 0) {
+    setBlurOpacity(1)
+  } else {
+    animationFrame = requestAnimationFrame(animateBlur)
+  }
+
+  return () => cancelAnimationFrame(animationFrame)
+}, [drunkEffectTime])
+
 
   const showPopup = (text: SetStateAction<string>) => {
     setPopup(text)
@@ -185,22 +238,19 @@ export default function App() {
     }
 
     setAmmo(a => a - 1)
+    setDrunkEffectTime(3)
 
     return {
       canShoot: true,
       targets: enemiesRef.current,
       onRealHit: () => {
         showPopup('wagmi')
-
-        // Despawn all 3 enemies
         enemiesRef.current.forEach(enemy => {
           enemy.mesh.visible = false
         })
-
         const newCyclesCompleted = cyclesCompleted + 1
         setCyclesCompleted(newCyclesCompleted)
 
-        // Check if we've completed 3 cycles
         if (newCyclesCompleted >= 3) {
           setGameEnded(true)
           setTimeout(() => {
@@ -209,7 +259,6 @@ export default function App() {
           return
         }
 
-        // Spawn next set after delay
         setTimeout(() => {
           setCurrentSet(generateEnemySet())
         }, 300)
@@ -225,7 +274,7 @@ export default function App() {
   }
 
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
+    <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
       <Canvas camera={{ position: [-7.6, 0.7, 0], fov: 75 }}>
         <ambientLight intensity={0.5} />
         <pointLight position={[10, 10, 10]} />
@@ -239,7 +288,22 @@ export default function App() {
         </Suspense>
 
         <PointerLockControls />
+        <DrunkFOVEffect time={drunkEffectTime} setTime={setDrunkEffectTime} />
       </Canvas>
+
+      {/* Screen Blur Overlay */}
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        backdropFilter: `blur(${blurOpacity * 5}px)`,
+        WebkitBackdropFilter: `blur(${blurOpacity * 5}px)`,
+        pointerEvents: 'none',
+        zIndex: 99,
+        transition: 'backdrop-filter 0.1s linear'
+      }} />
 
       {/* HUD */}
       <div style={{
