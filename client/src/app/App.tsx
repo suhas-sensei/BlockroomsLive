@@ -49,7 +49,6 @@ function FPSWeapon({ onShoot }: FPSWeaponProps) {
       const raycaster = new Raycaster()
       raycaster.setFromCamera(new Vector2(0, 0), camera)
 
-
       const intersects = raycaster.intersectObjects(targets.map(e => e.mesh), true)
 
       if (intersects.length > 0) {
@@ -133,44 +132,46 @@ function EnemyGroup({ enemySet, registerEnemies }: EnemyGroupProps) {
   )
 }
 
-function getRandomEnemySet(remainingEnemies: Enemy[]): [Enemy[], Enemy[]] {
-  const nextSet = remainingEnemies.slice(0, 3)
-  const rest = remainingEnemies.slice(3)
-  return [nextSet, rest]
+function generateEnemySet(): Enemy[] {
+  // Generate 3 enemies: 1 real, 2 fake
+  const enemies: Enemy[] = [
+    {
+      isReal: true,
+      position: [-5 + Math.random() * 4, 0.5, -3 + Math.random() * 6],
+      rotationY: Math.random() * Math.PI * 2,
+    },
+    {
+      isReal: false,
+      position: [-5 + Math.random() * 4, 0.5, -3 + Math.random() * 6],
+      rotationY: Math.random() * Math.PI * 2,
+    },
+    {
+      isReal: false,
+      position: [-5 + Math.random() * 4, 0.5, -3 + Math.random() * 6],
+      rotationY: Math.random() * Math.PI * 2,
+    }
+  ]
+
+  // Shuffle the array to randomize positions of real and fake enemies
+  for (let i = enemies.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[enemies[i], enemies[j]] = [enemies[j], enemies[i]]
+  }
+
+  return enemies
 }
 
 export default function App() {
   const enemiesRef = useRef<Array<{ mesh: any; isReal: boolean; onHit: () => void }>>([])
   const [ammo, setAmmo] = useState(6)
   const [popup, setPopup] = useState('')
-  const [enemyPool, setEnemyPool] = useState<Enemy[]>([])
   const [currentSet, setCurrentSet] = useState<Enemy[]>([])
+  const [cyclesCompleted, setCyclesCompleted] = useState(0)
   const [gameEnded, setGameEnded] = useState(false)
 
   useEffect(() => {
-    // Generate 48 enemies (16 real + 32 fake), randomize order
-    const enemies: Enemy[] = []
-    for (let i = 0; i < 48; i++) {
-      enemies.push({
-        isReal: i < 16,
-        position: [
-          -5 + Math.random() * 4,
-          0.5,
-          -3 + Math.random() * 6,
-        ] as [number, number, number],
-        rotationY: Math.random() * Math.PI * 2,
-      })
-    }
-
-    // Shuffle
-    for (let i = enemies.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[enemies[i], enemies[j]] = [enemies[j], enemies[i]]
-    }
-
-    const [initialSet, rest] = getRandomEnemySet(enemies)
-    setCurrentSet(initialSet)
-    setEnemyPool(rest)
+    // Start with the first set
+    setCurrentSet(generateEnemySet())
   }, [])
 
   const showPopup = (text: SetStateAction<string>) => {
@@ -190,15 +191,36 @@ export default function App() {
       targets: enemiesRef.current,
       onRealHit: () => {
         showPopup('wagmi')
-        // Despawn current and spawn next set
-        const [nextSet, rest] = getRandomEnemySet(enemyPool)
-        setCurrentSet(nextSet)
-        setEnemyPool(rest)
+
+        // Despawn all 3 enemies
+        enemiesRef.current.forEach(enemy => {
+          enemy.mesh.visible = false
+        })
+
+        const newCyclesCompleted = cyclesCompleted + 1
+        setCyclesCompleted(newCyclesCompleted)
+
+        // Check if we've completed 3 cycles
+        if (newCyclesCompleted >= 3) {
+          setGameEnded(true)
+          setTimeout(() => {
+            showPopup('You Win! All 3 cycles completed!')
+          }, 500)
+          return
+        }
+
+        // Spawn next set after delay
+        setTimeout(() => {
+          setCurrentSet(generateEnemySet())
+        }, 300)
       },
       onFakeHit: () => {
         showPopup('goodluck wasting ammo!')
       },
-      gameOver: () => showPopup('Game Over')
+      gameOver: () => {
+        setGameEnded(true)
+        showPopup('Game Over - Out of Ammo!')
+      }
     }
   }
 
@@ -210,7 +232,7 @@ export default function App() {
 
         <Suspense fallback={null}>
           <Room />
-          {currentSet.length > 0 && (
+          {currentSet.length > 0 && !gameEnded && (
             <EnemyGroup enemySet={currentSet} registerEnemies={list => (enemiesRef.current = list)} />
           )}
           <FPSWeapon onShoot={handleShoot} />
@@ -231,7 +253,7 @@ export default function App() {
         fontFamily: 'Arial',
         zIndex: 100,
       }}>
-        Click to shoot • Find the real enemy
+        Click to shoot • Find the real enemy • Cycle {cyclesCompleted + 1}/3
       </div>
 
       {/* Crosshair */}
