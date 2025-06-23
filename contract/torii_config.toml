@@ -1,0 +1,19 @@
+# The world address to index
+world_address = "0x011097187dc00f79265f35e73ba674b792624f77dfa239e381dfc6744e1c8265"
+
+# Default RPC URL configuration
+rpc = "https://api.cartridge.gg/x/starknet/sepolia"
+
+# Indexing Options
+[indexing]
+allowed_origins = ["*"]
+transactions = true
+pending = true
+polling_interval = 1000
+contracts = []
+
+[events]
+raw = true
+
+[sql]
+historical = ["full_starter_react-TrophyProgression"]
